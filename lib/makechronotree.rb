@@ -1,92 +1,243 @@
-require digest
-require securerandom
+require 'date'
+require 'digest'
+require 'securerandom'
+require 'mini_exiftool'
+require 'fileutils'
 
 class Makechronotree
+
+	def self.start(targetPath, destinationPath, origin = nil)
+		targetPath = self::validatePath(targetPath, true)
+		destinationPath = self::validatePath(destinationPath)
+
+		if(!targetPath)
+			self.log('Error: Invalid target.')
+			exit
+		elsif(!destinationPath)
+			self.log('Error: Invalid destination')
+			exit
+		end
+
+		makechronotree = self.new(targetPath, destinationPath, origin)
+ 	end
+
+	def self.log(msg)
+		puts "#{msg}\n"
+	end
 	
-	private_class_method def makeRandomName()
-		Digest::SHA256.hexdigest(Digest::SHA256.hexdigest(SecureRandom.hex(32)))
-	end
+	def initialize(targetPath, destinationPath, origin = nil)
+		@targetPath = targetPath
+		@destinationPath = destinationPath
+		@db = Db.new(destinationPath)
+		@origin = @db.createOrGetOrigin(origin)
 
-	private_class_method def setPermissionsAndOwner()
-		system "chown -R backupmaster:backupmaster #{BPATH_CONST}" 
-    	system "chmod -R 755 #{BPATH_CONST}"
-	end
+		traversePath()
+	end 
 
-	private_class_method def run(args)
-    	bpath = args['bpath']
-    	name = args['name']
+	private
 
-    	topname = BPATH_CONST + name
-    	if(!Dir.exist?(topname) and !File.exist?(topname))
-        	system "mkdir '#{topname}'"
-    	end
+		def self.validatePath(path, isTarget = false, create = nil)
+			path = path.gsub(/[\/]{2,}/, '/')
+			isRoot = path.slice(0) == '/'
 
-    	conflict = topname + "/conflict" 
-    	if(!Dir.exist?(conflict))
-        	system "mkdir '#{conflict}'"
-    	end
+			if(isRoot)
+				path.slice!(0)
+			end
 
-    	if(args['path'].nil?)
-        	path = []
-        	cpath = bpath
-    	else
-        	path = args['path']
+			path = path.split('/')
+			
+			path.reverse_each do |p|
+				if(p == nil || p.empty? || p.match(/^\s*$/))
+					path.delete(p)
+				end
+			end
 
-        	cpath = bpath + path.join("/") + '/'
-    	end
+			buildPath = isRoot ? '/' : ''
 
-    	if(!path.empty?)
-        	subtopname = BPATH_CONST + name + '/' + path.join('/')
-        	if(!Dir.exist?(subtopname) and !File.exist?(subtopname))
-            	system "mkdir '#{subtopname}'"
+			path.each do |p|
+				buildPath += (buildPath == '' || buildPath == '/' ? '' : '/') + p
+
+				if(!Dir.exist?(buildPath))
+					if(create || (!isTarget && p.equal?(path.last)))
+						Dir.mkdir(buildPath)
+						self::setPermissions(buildPath)
+					else
+						return false
+					end
+				end
+			end
+
+			path = buildPath
+
+			return path
+		end
+
+	 	def self.setPermissions(pathToFile)
+			File.chmod(0755, pathToFile)
+		end
+
+		def makeRandomName()
+			Digest::SHA256.hexdigest(Digest::SHA256.hexdigest(SecureRandom.hex(32)))
+		end
+
+		def traversePath(path = nil)
+			if(!path)
+				path = @targetPath
+			end
+		
+			ls = Dir.entries(path)
+
+    		ls.delete_if do |entry| 
+    			entry.match(/(^\.|^\.\.)$/)
+    		end
+
+    		if(ls.empty?)
+    			if(path)
+					Dir::rmdir(path)
+    			end
+
+				return
+    		end
+
+    		ls.delete_if do |entry| 
+    			entry.match(/(^\.|^\.\.|\.tacitpart|\.part|\.tmp|\.log)$/)
+    		end
+        		
+    		ls.each do |entry|
+    			pathToEntry = path + '/' + entry
+        		if(File.directory?(pathToEntry))
+            		traversePath(pathToEntry)
+            	else
+					processFile(pathToEntry)
+        		end
         	end
-    	end
+		
+		end
 
-    	ls = Dir.entries(cpath)
-    	ls.delete_if do |fil| fil.match(/(^\.$|^\.\.$|\.tacitpart$)/) end
-        	
-    	ls.each do |fil|
+		def getFilename(pathToFile)
+			return pathToFile.split('/').last
+		end
 
-        	if(File.directory?(cpath + fil))
-            	nypath = path.clone
-            	nypath.push(fil)
-            	processPath({'bpath' => bpath, 'name' => name, 'path' => nypath})
-            	next
-        	end
+		def splitFilenameAndExtension(filename)
+			extension = /\.[a-zA-Z0-9]{2,4}$/.match(filename)[0]
+			
+			return {name: filename.chomp(extension), extension: extension}
+		end
 
-        	extension = /(.*)(\.[a-zA-Z0-9]{2,4})$/.match(fil)
+		def makeFilenameFromDate(date)
+			return date.strftime('%Y-%m-%d_%H%M%S') 
+		end
 
-        	grab = cpath + fil
+		def getDate(pathToFile)
+			filename = getFilename(pathToFile)
+            
+			dateFromFilename = splitFilenameAndExtension(filename)[:name].gsub(/\([0-9]*\)$/, '').gsub(/[^\d]/, '')
+			
+			begin
+				exif = MiniExiftool.new(pathToFile)
+				if(exif.createDate && exif.createDate.instance_of?(Time))
+					date = exif.createDate
+				end
+			rescue
+			end
 
-        	if(path.empty?)
-            	to = BPATH_CONST + name + "/"
-        	else
-            	to = BPATH_CONST + name + "/" + path.join("/") + "/"
-        	end
+			if(!date && [8, 12, 14].include?(dateFromFilename.length) && DateTime.parse(dateFromFilename))
+				date = DateTime.parse(dateFromFilename)
+			end
+		
+			if(!date)
+				date = File.ctime(pathToFile)	
+			end
+			
+			return date
+		end
 
-        	if(File.exist?(to + fil))
-            	diff = system "diff '#{to + fil}' '#{grab}' > /dev/null"
-            	if(diff == true)
-                	to = conflict + '/' 
-            	end
-        	end
+		def fileGetChecksumAndValidate(pathToFile)
+			checksum = Digest::MD5.file(pathToFile).hexdigest
 
-        	number = 1
-        	while(File.exist?(to + fil)) do
+			if(@db.checksumExists(checksum))
+				return nil
+			end
+
+			return checksum
+		end
+
+		def getMonthName(monthNumber)
+			months = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember']
+
+			return months[monthNumber - 1]
+		end
+
+		def getFilePathFromDate(date)
+			return [@destinationPath, date.year, getMonthName(date.month)].join('/')
+		end
+
+		def alert(pathToFile, msg)
+			puts "#{pathToFile}: " + msg
+		end
+
+		def processFile(pathToFile)
+			date = getDate(pathToFile)
+			checksum = fileGetChecksumAndValidate(pathToFile)
+			newPath = getFilePathFromDate(date)
+			extension = splitFilenameAndExtension(getFilename(pathToFile))[:extension]
+			filename = makeFilenameFromDate(date)
+			finalFilename = filename + extension
+
+			if(!checksum)
+				alert(pathToFile, 'File already exists, omitting/removing..')
+				removeFile(pathToFile)
+
+				return
+			end
+
+			self.class::validatePath(newPath, false, true)
+			    		
+        	number = 0
+        	while(File.exist?(newPath + '/' + finalFilename)) do
              	 number += 1
-             	 fil = extension[1] + '-col' + number.to_s + extension[2]
+             	 finalFilename = filename + '-' + number.to_s + extension
         	end
 
-        	if(!File.exist?(grab))
-            	next
+        	if(!File.exist?(pathToFile))
+        		alert(pathToFile, 'File disappeared while processing..')
+
+            	return
         	end
 
-        	#############system "cp '#{grab}' '#{to + fil}'"
-        	#############system "rm '#{grab}'"        
-        	system "mv '#{grab}' '#{to + fil}'"
+			move = moveFile(pathToFile, newPath + '/' + finalFilename)
 
-    	end
+			if(move.instance_of?(String))
+				alert(pathToFile, move)
+			elsif(!move)
+				alert(pathToFile, "Something went wrong while moving to final destination, #{newPath + "/" + finalFilename}")
+			else
+				@db.createFile(finalFilename, checksum, date, @origin)
+			end
+		end
 
-		self.setPermissionsAndOwner()
-	end
+		def moveFile(pathToSource, pathToDestination)
+			if(!File.exist?(pathToSource))
+				return 'Source file not found.'
+			elsif(File.exist?(pathToDestination))
+				return "Destination filename already exists, #{pathToDestination}"
+			end
+
+			FileUtils.mv(pathToSource, pathToDestination)
+
+			self.class::setPermissions(pathToDestination)
+
+			return true
+		end
+
+		def removeFile(pathToFile)
+			if(!File.exist?(pathToFile))
+				return nil
+			end
+
+			File.delete(pathToFile)
+
+			return true
+		end
+
 end

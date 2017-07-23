@@ -1,6 +1,5 @@
 require 'date'
 require 'digest'
-require 'securerandom'
 require 'mini_exiftool'
 require 'fileutils'
 
@@ -75,11 +74,7 @@ class Makechronotree
 	 	def self.setPermissions(pathToFile)
 			File.chmod(0755, pathToFile)
 		end
-
-		def makeRandomName()
-			Digest::SHA256.hexdigest(Digest::SHA256.hexdigest(SecureRandom.hex(32)))
-		end
-
+		
 		def traversePath(path = nil)
 			if(!path)
 				path = @targetPath

@@ -12,5 +12,4 @@ Gem::Specification.new do |s|
 	s.add_dependency('OptionParser')
 	s.add_dependency('mini_exiftool')
 	s.add_dependency('sqlite3')
-	s.add_dependency('digest')
 end

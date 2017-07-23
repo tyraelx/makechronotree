@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 	s.files = ['lib/db.rb', 'lib/makechronotree.rb']
 	s.executables << 'makechronotree'
 	s.license = 'MIT'
-	s.add_dependency('optparse')
+	s.add_dependency('OptionParser')
 	s.add_dependency('mini_exiftool')
 	s.add_dependency('fileutils')
 	s.add_dependency('sqlite3')

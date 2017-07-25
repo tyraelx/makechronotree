@@ -1,11 +1,11 @@
 #!/usr/bin/env ruby
 
 require 'optparse'
-#require 'db'
-#require 'makechronotree'
+require 'db'
+require 'makechronotree'
 # For testing while developing without building gem
-require_relative '../lib/db'
-require_relative '../lib/makechronotree'
+#require_relative '../lib/db'
+#require_relative '../lib/makechronotree'
 
 origin = nil
 

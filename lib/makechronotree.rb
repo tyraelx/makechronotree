@@ -77,6 +77,7 @@ class Makechronotree
 		
 		def traversePath(path = nil)
 			if(!path)
+				noArgument = 1
 				path = @targetPath
 			end
 		
@@ -87,7 +88,7 @@ class Makechronotree
     		end
 
     		if(ls.empty?)
-    			if(path)
+    			if(!noArgument)
 					Dir::rmdir(path)
     			end
 

@@ -149,8 +149,22 @@ class Makechronotree
 
 		def fileGetChecksumAndValidate(pathToFile)
 			checksum = Digest::MD5.file(pathToFile).hexdigest
+			get = @db.checksumExists(checksum)
+			matchFound = nil
+			
+			if(get)
+				get.each do |item|
+					file = getFilePathFromDate(DateTime.parse(item['created_at'])) + '/' + item['name']
+					
+					if(FileUtils.compare_file(pathToFile, file))
+						matchFound = 1
 
-			if(@db.checksumExists(checksum))
+						break
+					end
+				end
+			end
+
+			if(matchFound)
 				return nil
 			end
 

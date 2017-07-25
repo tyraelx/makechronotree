@@ -11,6 +11,8 @@ class Db
 		end
 
 		@db = SQLite3::Database.new(dbFile)
+		
+		@db.results_as_hash = true
 
 		if(new)
 			createTables()
@@ -26,7 +28,7 @@ class Db
 
 		name = name.strip
 
-		id = @db.prepare("select id from origin where lower(name) = ? order by id limit 1").execute(name.downcase).first
+		id = @db.get_first_value("select id from origin where lower(name) = ? order by id limit 1", name.downcase)
 
 		if(!id)
 			@db.prepare("insert into origin (name) values (?)").execute(name)
@@ -37,7 +39,7 @@ class Db
 	end
 
 	def checksumExists(checksum)
-		return @db.prepare("select id from file where checksum = ?").execute(checksum).first
+		return @db.prepare("select name, created_at from file where checksum = ?").execute(checksum)
 	end
 
 	def createFile(name, checksum, created_at, origin = nil)

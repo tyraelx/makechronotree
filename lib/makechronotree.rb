@@ -1,4 +1,5 @@
 require 'date'
+require 'time'
 require 'digest'
 require 'mini_exiftool'
 require 'fileutils'
@@ -126,23 +127,55 @@ class Makechronotree
 
 		def getDate(pathToFile)
 			filename = getFilename(pathToFile)
-            
-			dateFromFilename = splitFilenameAndExtension(filename)[:name].gsub(/\([0-9]*\)$/, '').gsub(/[^\d]/, '')
-			
+		
 			begin
 				exif = MiniExiftool.new(pathToFile)
+
 				if(exif.createDate && exif.createDate.instance_of?(Time))
-					date = exif.createDate
+					if(!date || date > exif.createDate)
+						date = exif.createDate
+					end
+				end
+
+				if(exif.fileModifyDate && exif.fileModifyDate.instance_of(Time))
+					if(!date || date > exif.fileModifyDate)
+						date = exif.fileModifyDate
+					end	
 				end
 			rescue
 			end
 
-			if(!date && [8, 12, 14].include?(dateFromFilename.length) && DateTime.parse(dateFromFilename))
-				date = DateTime.parse(dateFromFilename)
+			fileCreationDate = File.ctime(pathToFile)
+
+			if(!date || date > fileCreationDate)
+				date = fileCreationDate
 			end
-		
-			if(!date)
-				date = File.ctime(pathToFile)	
+
+			fileModificationDate = File.mtime(pathToFile)
+
+			if(!date || date > fileModificationDate)
+				date = fileModificationDate
+			end
+
+			dateFromFilename = splitFilenameAndExtension(filename)[:name].match(/([^\d]|^)(\d{4}(([\-\_\.\s]|)\d{2}){2}[\-\_\.\s]\d{2}(([\-\_\.\s]|)\d{2}){2})([^\d]|$)/)
+
+			if(dateFromFilename)
+				dateFromFilename = dateFromFilename[2].gsub(/[^\d]/, '')
+				timezone = DateTime.now.zone.gsub(':', '')
+
+				begin
+					dateFromFilename = DateTime.parse(dateFromFilename + timezone)
+				rescue
+					dateFromFilename = nil
+				end
+
+				if(dateFromFilename)
+					dateFromFilename = dateFromFilename.to_time
+					
+					if(date > dateFromFilename && (date.year - dateFromFilename.year).between?(0,15))
+						date = dateFromFilename
+					end
+				end
 			end
 			
 			return date
@@ -159,6 +192,8 @@ class Makechronotree
 					
 					if(FileUtils.compare_file(pathToFile, file))
 						matchFound = 1
+
+						puts "Conflict: #{file}"
 
 						break
 					end
